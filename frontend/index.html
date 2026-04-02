@@ -639,7 +639,8 @@
 
   // --- KAMERA, EFEKTLER VE FOTOĞRAF MANTIĞI ---
   let fxOpen = false;
-  
+  let currentMode = 'single'; // 'single' veya 'quad' (kolaj)
+
   async function startCam(){
     try{
       const s=await navigator.mediaDevices.getUserMedia({video:{width:1280,height:960,facingMode:'user'},audio:false});
@@ -658,9 +659,14 @@
     btn.classList.add('active');
     document.getElementById('cam').className=cls;
   }
+
   function setMode(mode) {
+    currentMode = mode;
     document.querySelectorAll('.cbtn').forEach(b=>b.classList.remove('active'));
     document.getElementById(`mode-${mode}`).classList.add('active');
+    
+    // Video modu henüz aktif değil
+    if(mode === 'video') { alert("Video özelliği yakında Premium'da!"); setMode('single'); }
   }
 
   document.addEventListener('click',e=>{
@@ -730,60 +736,173 @@
     } catch(e) { console.error("Silme hatası", e); }
   }
 
+  // --- YENİ: GERİ SAYIM VE SES EFEKTİ ---
+  function showCountdown(seconds) {
+    return new Promise((resolve) => {
+        const countdownEl = document.createElement('div');
+        countdownEl.style = "position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:white; font-size:120px; font-weight:900; background:rgba(0,0,0,0.3); z-index:100; font-family:-apple-system; animation:fadeOut 0.8s ease forwards;";
+        document.getElementById('video-and-thumbs').appendChild(countdownEl);
+
+        playCountdownBeep(); // Kısa bir bip sesi
+
+        let timeLeft = seconds;
+        countdownEl.innerText = timeLeft;
+
+        const timer = setInterval(() => {
+            timeLeft--;
+            if (timeLeft > 0) {
+                countdownEl.innerText = timeLeft;
+                countdownEl.style.animation = 'none'; // Animasyonu sıfırla
+                void countdownEl.offsetWidth; // DOM'u tetikle
+                countdownEl.style.animation = 'fadeOut 0.8s ease forwards'; // Animasyonu yeniden başlat
+                playCountdownBeep();
+            } else {
+                clearInterval(timer);
+                countdownEl.remove();
+                resolve();
+            }
+        }, 1000);
+    });
+  }
+
+  function playCountdownBeep() {
+      try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+          gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.1);
+      } catch(e) {}
+  }
+
+  // --- YENİ: KOLAJ (GRID) OLUŞTURMA MANTIĞI ---
+  function createCollage(singlePhotoUrls) {
+      return new Promise((resolve) => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          // Dikey bir şerit: 300px genişlik, 1200px yükseklik (4 fotoğraf alt alta)
+          const P_WIDTH = 300;
+          const P_HEIGHT = 225; // 4:3 oranında tek kare
+          canvas.width = P_WIDTH + 20; // Yanlardan 10px beyaz boşluk
+          canvas.height = (P_HEIGHT * 4) + 50; // Alttan/üstten boşluklar
+          
+          // Arka planı beyaz yap
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          let loadedImages = 0;
+          
+          singlePhotoUrls.forEach((src, index) => {
+              const img = new Image();
+              // Cloudinary cors sorununu aşmak için:
+              img.crossOrigin = "Anonymous"; 
+              img.src = src;
+              
+              img.onload = () => {
+                  const x = 10; // Sol boşluk
+                  const y = 10 + (index * (P_HEIGHT + 10)); // Üst boşluk + her kare arası 10px
+                  
+                  // Fotoğrafı canvas'a çiz
+                  ctx.drawImage(img, x, y, P_WIDTH, P_HEIGHT);
+                  
+                  loadedImages++;
+                  // Tüm fotoğraflar yüklendiğinde nihai resmi oluştur
+                  if (loadedImages === singlePhotoUrls.length) {
+                      // Altta küçük bir marka yazısı ekleyelim (Opsiyonel ama şık)
+                      ctx.fillStyle = "#888888";
+                      ctx.font = "bold 13px -apple-system";
+                      ctx.fillText("PHOTOBOOTH", canvas.width / 2 - 45, canvas.height - 15);
+                      
+                      const finalCollageDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+                      resolve(finalCollageDataUrl);
+                  }
+              };
+          });
+      });
+  }
+
+  // --- SNAP (ÇEKİM) MANTIĞI (Single & Quad Desteği ile) ---
   async function snap(){
     closeViewer();
-
     const v = document.getElementById('cam');
     if(!v.srcObject) return;
+    if(limitReached) { document.getElementById('upgrade-modal').style.display = 'flex'; return; }
+    if(isUploading) return;
+    
+    // Çekim yapan asıl fonksiyon
+    async function takeSingleFrame() {
+        playShutterSound();
+        const fl = document.getElementById('flash');
+        fl.classList.add('on'); setTimeout(() => fl.classList.remove('on'), 110);
 
-    if(limitReached) {
-        document.getElementById('upgrade-modal').style.display = 'flex';
-        return;
+        const c = document.getElementById('cap-canvas');
+        c.width = v.videoWidth || 640; c.height = v.videoHeight || 480;
+        const ctx = c.getContext('2d');
+        ctx.filter = getComputedStyle(v).filter;
+        ctx.translate(c.width, 0); ctx.scale(-1, 1);
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+        
+        return c.toDataURL('image/jpeg', 0.92);
     }
 
-    if(isUploading) return;
-    isUploading = true;
+    // Yükleme yapan asıl fonksiyon
+    async function uploadFinalPhoto(dataUrl) {
+        isUploading = true;
+        const token = localStorage.getItem('token'); 
+        try {
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ photoData: dataUrl }) 
+            });
+            const result = await response.json();
+            if (response.status === 403) {
+                limitReached = true; 
+                document.getElementById('upgrade-modal').style.display = 'flex';
+            } else if (response.status === 200) {
+                photos.push(result.photoUrl);
+                renderThumbs();
+                if (result.remainingQuota <= 0) { limitReached = true; }
+            }
+        } catch (error) { console.error("Yükleme hatası", error); } 
+        finally { isUploading = false; }
+    }
 
-    playShutterSound();
-    const fl = document.getElementById('flash');
-    fl.classList.add('on'); setTimeout(() => fl.classList.remove('on'), 110);
+    // ─── KOLAJ (QUAD) ÇEKİM MODU ───
+    if (currentMode === 'quad') {
+        const shutterBtn = document.getElementById('shutter');
+        shutterBtn.disabled = true; shutterBtn.style.opacity = '0.5';
 
-    const c = document.getElementById('cap-canvas');
-    c.width = v.videoWidth || 640; c.height = v.videoHeight || 480;
-    const ctx = c.getContext('2d');
-    
-    ctx.filter = getComputedStyle(v).filter;
-    ctx.translate(c.width, 0); ctx.scale(-1, 1);
-    ctx.drawImage(v, 0, 0, c.width, c.height);
-    
-    const dataUrl = c.toDataURL('image/jpeg', 0.92);
-    const token = localStorage.getItem('token'); 
+        const photoDataUrls = [];
 
-    try {
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` 
-            },
-            body: JSON.stringify({ photoData: dataUrl }) 
-        });
-
-        const result = await response.json();
-
-        if (response.status === 403) {
-            limitReached = true; 
-            document.getElementById('upgrade-modal').style.display = 'flex';
-        } else if (response.status === 200) {
-            photos.push(result.photoUrl);
-            renderThumbs();
-            if (result.remainingQuota <= 0) { limitReached = true; }
-        } else if (response.status === 401) {
-            alert("Oturumunuz düşmüş. Lütfen tekrar giriş yapın.");
-            logout();
+        // Arka arkaya 4 çekim yap (Döngü ile)
+        for (let i = 0; i < 4; i++) {
+            // "Fotoğraf 1/4 çekiliyor..." gibi bir mesaj gösterilebilir
+            await showCountdown(3); // 3 saniye geri say
+            const dataUrl = await takeSingleFrame();
+            photoDataUrls.push(dataUrl); // Kareleri geçici olarak sakla
         }
-    } catch (error) { console.error("Yükleme hatası", error); } 
-    finally { isUploading = false; }
+
+        // 4 kareyi tek kolajda birleştir
+        const collageDataUrl = await createCollage(photoDataUrls);
+
+        // Nihai kolajı Cloudinary'ye yükle
+        await uploadFinalPhoto(collageDataUrl);
+
+        shutterBtn.disabled = false; shutterBtn.style.opacity = '1';
+    
+    // ─── TEK ÇEKİM MODU (Varsayılan) ───
+    } else {
+        await showCountdown(3); // Tek çekim için de 3 saniye geri sayalım
+        const dataUrl = await takeSingleFrame();
+        await uploadFinalPhoto(dataUrl);
+    }
   }
 
   function renderThumbs() {
@@ -807,5 +926,6 @@
     s.scrollLeft = s.scrollWidth;
   }
 </script>
+
 </body>
 </html>
