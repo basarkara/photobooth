@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const photoRoutes = require('./routes/photoRoutes'); 
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); 
@@ -35,6 +35,6 @@ app.use((req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
-app.listen(PORT, () => {
-    console.log(`🔥 Sunucu http://localhost:${PORT} adresinde ayaklandı!`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🔥 Sunucu ${PORT} portunda başarıyla ayaklandı!`);
 });
