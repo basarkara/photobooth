@@ -51,10 +51,15 @@
   .mb-item.bold { font-weight: 600; }
   #mb-right { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 12.5px; }
   #clock { font-variant-numeric: tabular-nums; }
+  
+  /* YENİ: ADMIN BUTONU */
+  #admin-btn { cursor: pointer; color: #32d74b; display: none; font-weight: 500; }
+  #admin-btn:hover { text-decoration: underline; }
+  
   #logout-btn { cursor: pointer; color: #ff6e6e; display: none; font-weight: 500; }
   #logout-btn:hover { text-decoration: underline; }
 
-  /* ── MODALLAR (AUTH & UYARI & AYARLAR) ── */
+  /* ── MODALLAR (AUTH & UYARI & AYARLAR & ADMIN) ── */
   .modal-overlay {
     position: fixed; inset: 0; z-index: 400;
     background: rgba(0,0,0,0.6); backdrop-filter: blur(15px);
@@ -247,6 +252,7 @@
   <span class="mb-item">Pencere</span>
   <span class="mb-item">Yardım</span>
   <div id="mb-right">
+    <span id="admin-btn" onclick="openAdminPanel()">Admin</span>
     <span id="logout-btn" onclick="logout()">Çıkış Yap</span>
     <span>🔋 98%</span>
     <span>📶</span>
@@ -278,6 +284,22 @@
     <button class="modal-btn" onclick="document.getElementById('bg-upload').click()">🖼️ Yeni Arka Plan Seç</button>
     <button class="modal-btn" style="background:#ff3b30;" onclick="resetBackground()">🔄 Varsayılana Dön</button>
     <button class="modal-btn" style="background:rgba(255,255,255,0.2); margin-top:16px;" onclick="document.getElementById('settings-modal').style.display='none'">Kapat</button>
+  </div>
+</div>
+
+<div id="admin-modal" class="modal-overlay">
+  <div class="modal-content">
+    <h3>👑 Yönetim Paneli</h3>
+    <p>Sistemin genel durumu aşağıdadır.</p>
+    
+    <div id="admin-error" style="color: #ff6e6e; font-size: 13px; margin-bottom: 16px; display: none;"></div>
+    
+    <div id="admin-stats-container" style="display:none; text-align: left; background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+       <p style="margin-bottom: 8px; color: #fff; font-size: 15px;">👥 <b>Toplam Kullanıcı:</b> <span id="stat-users">...</span></p>
+       <p style="margin-bottom: 0; color: #fff; font-size: 15px;">📸 <b>Toplam Fotoğraf:</b> <span id="stat-photos">...</span></p>
+    </div>
+    
+    <button class="modal-btn" style="background:rgba(255,255,255,0.2);" onclick="document.getElementById('admin-modal').style.display='none'">Kapat</button>
   </div>
 </div>
 
@@ -387,7 +409,6 @@
       <span class="di-label">Müzik</span>
       <div class="di-dot"></div>
     </div>
-    
     <div class="di">
       <img src="https://cdn.prod.website-files.com/5f7081c044fb7b3321ac260e/5fedaca49dfbe24f106dc280_27_messages.png" alt="Messages">
       <span class="di-label">Mesajlar</span>
@@ -503,6 +524,37 @@
     img.src = URL.createObjectURL(file);
   }
 
+  // --- YENİ: ADMIN PANELİ AÇMA FONKSİYONU ---
+  async function openAdminPanel() {
+    const modal = document.getElementById('admin-modal');
+    const errorBox = document.getElementById('admin-error');
+    const statsBox = document.getElementById('admin-stats-container');
+    
+    modal.style.display = 'flex';
+    errorBox.style.display = 'none';
+    statsBox.style.display = 'none';
+    
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/stats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        document.getElementById('stat-users').innerText = data.userCount;
+        document.getElementById('stat-photos').innerText = data.totalPhotos;
+        statsBox.style.display = 'block'; // Sadece admin ise bu kutu görünür
+      } else {
+        errorBox.innerText = data.message || "Erişim engellendi: Yönetici yetkisi gerekli.";
+        errorBox.style.display = 'block';
+      }
+    } catch (err) {
+      errorBox.innerText = "Sunucu bağlantı hatası.";
+      errorBox.style.display = 'block';
+    }
+  }
+
   // --- ÜYELİK & KİLİT SİSTEMİ MANTIĞI ---
   let isLoginMode = true;
   let photos = [];
@@ -559,6 +611,9 @@
     document.getElementById('auth-overlay').style.display = 'none';
     document.getElementById('app-container').style.display = 'flex';
     document.getElementById('dock-container').style.display = 'block';
+    
+    // YENİ: Admin butonu da görünür oluyor
+    document.getElementById('admin-btn').style.display = 'inline';
     document.getElementById('logout-btn').style.display = 'inline';
     startCam();
 

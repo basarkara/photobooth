@@ -3,8 +3,10 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
-// Route dosyasını içe aktar
+// Route dosyalarını içe aktar
 const photoRoutes = require('./routes/photoRoutes'); 
+const authRoutes = require('./routes/authRoutes');
+const adminRoutes = require('./routes/adminRoutes'); // YENİ: Admin rotasını içe aktardık
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -13,9 +15,9 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' })); 
 
 // Rotaları kullanıma aç
-const authRoutes = require('./routes/authRoutes');
 app.use('/api/auth', authRoutes);
 app.use('/api', photoRoutes); 
+app.use('/api/admin', adminRoutes); // YENİ: Admin rotasını kullanıma açtık
 
 app.get('/api/status', (req, res) => {
     res.json({ message: "PhotoBooth SaaS API tıkır tıkır çalışıyor 🚀" });
@@ -31,7 +33,9 @@ const path = require('path');
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // 2. KESİN ÇÖZÜM: Parametresiz, düz '/' rotası ile tüm dosyayı sun
-app.use((req, res) => {
+app.use((req, res, next) => {
+    // API isteklerini frontend'e yönlendirme! (Bunu da garantiye aldım)
+    if (req.url.startsWith('/api')) return next();
     res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
