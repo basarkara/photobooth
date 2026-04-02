@@ -781,16 +781,19 @@
   }
 
   // --- YENİ: KOLAJ (GRID) OLUŞTURMA MANTIĞI ---
+  // --- YENİ: 2x2 KARE KOLAJ (GRID) OLUŞTURMA MANTIĞI ---
   function createCollage(singlePhotoUrls) {
       return new Promise((resolve) => {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          // Dikey bir şerit: 300px genişlik, 1200px yükseklik (4 fotoğraf alt alta)
-          const P_WIDTH = 300;
-          const P_HEIGHT = 225; // 4:3 oranında tek kare
-          canvas.width = P_WIDTH + 20; // Yanlardan 10px beyaz boşluk
-          canvas.height = (P_HEIGHT * 4) + 50; // Alttan/üstten boşluklar
+          // 2x2 Kare Grid Ayarları
+          const P_SIZE = 400; // Her bir fotoğrafın boyutu (400x400 tam kare)
+          const GAP = 15;     // Fotoğraflar arası ve dış kenar boşlukları (Polaroid hissi için)
+
+          // Toplam Canvas Boyutu (Kare Formatta: 845 x 845)
+          canvas.width = (P_SIZE * 2) + (GAP * 3);
+          canvas.height = (P_SIZE * 2) + (GAP * 3);
           
           // Arka planı beyaz yap
           ctx.fillStyle = "#FFFFFF";
@@ -800,26 +803,31 @@
           
           singlePhotoUrls.forEach((src, index) => {
               const img = new Image();
-              // Cloudinary cors sorununu aşmak için:
               img.crossOrigin = "Anonymous"; 
               img.src = src;
               
               img.onload = () => {
-                  const x = 10; // Sol boşluk
-                  const y = 10 + (index * (P_HEIGHT + 10)); // Üst boşluk + her kare arası 10px
+                  // 1. ADIM: Kameradan gelen dikdörtgen görüntüyü bozmamak için MERKEZDEN KARE kesit (crop) al.
+                  const sSize = Math.min(img.width, img.height); // En kısa kenarı bul
+                  const sx = (img.width - sSize) / 2; // X ekseninde merkeze hizala
+                  const sy = (img.height - sSize) / 2; // Y ekseninde merkeze hizala
+
+                  // 2. ADIM: 4'lü ızgara (2x2) üzerinde nereye geleceğini hesapla
+                  // index 0: sol-üst | index 1: sağ-üst | index 2: sol-alt | index 3: sağ-alt
+                  const col = index % 2; 
+                  const row = Math.floor(index / 2);
                   
-                  // Fotoğrafı canvas'a çiz
-                  ctx.drawImage(img, x, y, P_WIDTH, P_HEIGHT);
+                  const dx = GAP + (col * (P_SIZE + GAP)); // X pozisyonu
+                  const dy = GAP + (row * (P_SIZE + GAP)); // Y pozisyonu
+                  
+                  // Çizimi gerçekleştir: drawImage(resim, kaynakX, kaynakY, kaynakGen, kaynakYük, hedefX, hedefY, hedefGen, hedefYük)
+                  ctx.drawImage(img, sx, sy, sSize, sSize, dx, dy, P_SIZE, P_SIZE);
                   
                   loadedImages++;
+                  
                   // Tüm fotoğraflar yüklendiğinde nihai resmi oluştur
                   if (loadedImages === singlePhotoUrls.length) {
-                      // Altta küçük bir marka yazısı ekleyelim (Opsiyonel ama şık)
-                      ctx.fillStyle = "#888888";
-                      ctx.font = "bold 13px -apple-system";
-                      ctx.fillText("PHOTOBOOTH", canvas.width / 2 - 45, canvas.height - 15);
-                      
-                      const finalCollageDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+                      const finalCollageDataUrl = canvas.toDataURL('image/jpeg', 0.95); // Kaliteyi biraz artırdık
                       resolve(finalCollageDataUrl);
                   }
               };
